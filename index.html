@@ -117,8 +117,24 @@
   #modal{background:#fff;width:100%;max-width:520px;margin:0 auto;border-radius:20px 20px 0 0;padding:18px;max-height:88vh;overflow-y:auto;}
   #modal h3{margin:0 0 12px;}
   #modal label{font-size:.75rem;font-weight:700;color:#556;display:block;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.3px;}
-  #modal select, #modal textarea, #modal input[type=file]{width:100%;padding:10px;border-radius:10px;border:1.5px solid #ddd;font-size:.95rem;font-family:inherit;}
-  #modal textarea{resize:none;height:70px;}
+  #modal select, #modal textarea{width:100%;padding:10px;border-radius:10px;border:1.5px solid #ddd;font-size:.95rem;font-family:inherit;}
+  #modal textarea{resize:none;height:60px;}
+
+  .photoBox{width:100%;height:150px;border-radius:16px;border:2.5px dashed #c7c2b4;background:#f7f5ee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:#887;font-size:.85rem;font-weight:600;cursor:pointer;overflow:hidden;position:relative;}
+  .photoBox img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+  .photoBox .retake{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;font-size:.68rem;padding:4px 10px;border-radius:20px;}
+
+  .stateCards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+  .stateCard{border:2.5px solid #e3e0d5;border-radius:14px;padding:12px 4px;text-align:center;cursor:pointer;background:#fff;}
+  .stateCard .ic{font-size:1.4rem;display:block;}
+  .stateCard .tx{font-size:.68rem;font-weight:700;color:#667;margin-top:3px;display:block;}
+  .stateCard.sel-listo{border-color:var(--ok);background:#eef6f0;}
+  .stateCard.sel-revisar{border-color:var(--media);background:#fbf4e3;}
+  .stateCard.sel-danada{border-color:var(--alta);background:#fbeae5;}
+
+  .prioChips{display:flex;gap:6px;flex-wrap:wrap;}
+  .prioChip{border:2px solid #ddd;border-radius:20px;padding:7px 12px;font-size:.75rem;font-weight:700;color:#667;cursor:pointer;background:#fff;}
+  .prioChip.active{color:#fff;border-color:transparent;}
 
   #toast{position:fixed;left:50%;bottom:100px;transform:translate(-50%,20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:30px;font-size:.9rem;opacity:0;transition:all .25s;z-index:60;pointer-events:none;white-space:nowrap;}
   #toast.show{opacity:1;transform:translate(-50%,0);}
@@ -370,8 +386,7 @@ function openSheet(id, justSaved=false){
       <div><b>Condición</b>${ultimaPrueba ? ultimaPrueba.condicion : '—'}</div>
     </div>
     <div class="btnrow">
-      <button class="big primary" onclick="openForm('${m.id}')">➕ Nueva Prueba de Estado</button>
-      <button class="big quick" onclick="quickMark('${m.id}')">🖼️ Marcar grabado aquí</button>
+      <button class="big primary" onclick="openRegistro('${m.id}')">📝 Registrar en esta matriz</button>
       ${ultimaPrueba ? `<button class="big secondary" onclick="undoLast('${m.id}')">↩️ Deshacer último registro</button>` : ''}
     </div>
   `;
@@ -411,55 +426,102 @@ function closeSheetOnMapTap(){
   if(leafletMap) leafletMap.on('click', ()=> document.getElementById('sheet').classList.remove('open'));
 }
 
-/* ---------- NUEVA PRUEBA DE ESTADO (form) ---------- */
-function openForm(matrizId){
+/* ---------- REGISTRAR EN ESTA MATRIZ (flujo único, foto primero) ---------- */
+let regFotoData = null;
+let regEstado = null;
+let regPrioridad = null;
+
+function openRegistro(matrizId){
+  regFotoData = null;
+  regEstado = null;
+  regPrioridad = null;
   document.getElementById('modal').innerHTML = `
-    <h3>Nueva Prueba de Estado</h3>
-    <label>Condición de la madera</label>
-    <select id="fCondicion">
-      <option>Buena</option><option>Dañada</option><option>Perdida</option>
-    </select>
-    <label>Prioridad actual</label>
-    <select id="fPrioridad">
-      <option>Alta</option><option>Media</option><option>Baja</option><option>Urgente</option>
-    </select>
-    <label>Foto</label>
-    <input id="fFoto" type="file" accept="image/*" capture="environment">
-    <label>Notas</label>
-    <textarea id="fNotas" placeholder="Observaciones..."></textarea>
+    <h3>Registrar en esta matriz</h3>
+
+    <label>1. Foto (toca para abrir la cámara)</label>
+    <input id="regFotoInput" type="file" accept="image/*" capture="environment" style="display:none">
+    <div class="photoBox" id="photoBox" onclick="document.getElementById('regFotoInput').click()">
+      <span style="font-size:1.6rem">📷</span>
+      <span>Toca para tomar foto</span>
+    </div>
+
+    <label>2. ¿Cómo quedó?</label>
+    <div class="stateCards">
+      <div class="stateCard" data-estado="listo" onclick="pickEstado('listo')">
+        <span class="ic">🟢</span><span class="tx">Listo</span>
+      </div>
+      <div class="stateCard" data-estado="revisar" onclick="pickEstado('revisar')">
+        <span class="ic">🟡</span><span class="tx">A revisar</span>
+      </div>
+      <div class="stateCard" data-estado="danada" onclick="pickEstado('danada')">
+        <span class="ic">🔴</span><span class="tx">Dañada / perdida</span>
+      </div>
+    </div>
+
+    <label>3. Prioridad (si aún falta trabajo)</label>
+    <div class="prioChips" id="prioChips">
+      <div class="prioChip" data-p="Alta" onclick="pickPrioridad('Alta')">Alta</div>
+      <div class="prioChip" data-p="Media" onclick="pickPrioridad('Media')">Media</div>
+      <div class="prioChip" data-p="Baja" onclick="pickPrioridad('Baja')">Baja</div>
+    </div>
+
+    <label>Notas (opcional)</label>
+    <textarea id="regNotas" placeholder="Observaciones..."></textarea>
+
     <div class="btnrow" style="margin-top:16px">
-      <button class="big primary" onclick="submitForm('${matrizId}')">Guardar registro</button>
+      <button class="big primary" onclick="submitRegistro('${matrizId}')">Guardar registro</button>
       <button class="big secondary" onclick="closeModal()">Cancelar</button>
     </div>
   `;
+  document.getElementById('regFotoInput').addEventListener('change', async e=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    regFotoData = await fileToBase64(file);
+    const box = document.getElementById('photoBox');
+    box.innerHTML = `<img src="${regFotoData}"><span class="retake">Toca para repetir</span>`;
+  });
   document.getElementById('modalBg').classList.add('open');
+}
+
+function pickEstado(estado){
+  regEstado = estado;
+  document.querySelectorAll('.stateCard').forEach(c=>{
+    c.classList.remove('sel-listo','sel-revisar','sel-danada');
+    if(c.dataset.estado===estado) c.classList.add('sel-'+estado);
+  });
+  // Si quedó "Listo", la prioridad ya no aplica: la limpiamos visualmente.
+  if(estado==='listo'){
+    regPrioridad = null;
+    document.querySelectorAll('.prioChip').forEach(c=>c.classList.remove('active'));
+  }
+}
+const PRIO_CHIP_COLOR = {Alta:'#b6452c', Media:'#c99a2e', Baja:'#5c7a8a'};
+function pickPrioridad(p){
+  regPrioridad = p;
+  document.querySelectorAll('.prioChip').forEach(c=>{
+    const on = c.dataset.p===p;
+    c.classList.toggle('active', on);
+    c.style.background = on ? PRIO_CHIP_COLOR[p] : '#fff';
+    c.style.borderColor = on ? PRIO_CHIP_COLOR[p] : '#ddd';
+  });
 }
 function closeModal(){ document.getElementById('modalBg').classList.remove('open'); }
 
-async function submitForm(matrizId){
-  const condicion = document.getElementById('fCondicion').value;
-  const prioridad = document.getElementById('fPrioridad').value;
-  const notas = document.getElementById('fNotas').value;
-  const fotoFile = document.getElementById('fFoto').files[0];
-  let fotoData = null;
-  if(fotoFile) fotoData = await fileToBase64(fotoFile);
+async function submitRegistro(matrizId){
+  if(!regEstado){ toast('Elige cómo quedó la matriz'); return; }
+  const notas = document.getElementById('regNotas').value;
+  const condicionTexto = {listo:'Buena', revisar:'A revisar', danada:'Dañada / perdida'}[regEstado];
 
-  await saveRegistro(matrizId, {condicion, prioridad, notas, foto:fotoData, marcaGrabado:false});
+  await saveRegistro(matrizId, {
+    condicion: condicionTexto,
+    prioridad: regEstado==='listo' ? null : (regPrioridad || 'Media'),
+    notas,
+    foto: regFotoData,
+    marcaGrabado: regEstado==='listo'
+  });
   closeModal();
+  if(navigator.vibrate) navigator.vibrate(80);
   toast('Registro guardado ✔');
-}
-
-function quickMark(matrizId){
-  const input = document.createElement('input');
-  input.type='file'; input.accept='image/*'; input.capture='environment';
-  input.onchange = async ()=>{
-    const file = input.files[0];
-    const fotoData = file ? await fileToBase64(file) : null;
-    await saveRegistro(matrizId, {condicion:'Buena', prioridad:null, notas:'Marcado rápido desde terreno', foto:fotoData, marcaGrabado:true});
-    if(navigator.vibrate) navigator.vibrate(80);
-    toast('Grabado marcado ✔');
-  };
-  input.click();
 }
 
 async function saveRegistro(matrizId, {condicion, prioridad, notas, foto, marcaGrabado}){
@@ -473,7 +535,7 @@ async function saveRegistro(matrizId, {condicion, prioridad, notas, foto, marcaG
   pruebas.push(registro);
 
   const m = matrices.find(x=>x.id===matrizId);
-  if(marcaGrabado || registro.estadoGrabado){ m.hecha = true; }
+  m.hecha = !!marcaGrabado;
   if(prioridad) m.prioridad = prioridad;
   await putOne('matrices', m);
 
