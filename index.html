@@ -42,6 +42,13 @@
   .counter.pendientes .n{color:var(--media);}
   .counter.listos .n{color:var(--ok);}
 
+  .filterRow{display:flex;gap:8px;margin:0 16px 12px;flex-shrink:0;overflow-x:auto;}
+  .chip-filter{border:2px solid #d8d4c8;background:#fff;color:#556;padding:8px 14px;border-radius:30px;font-size:.78rem;font-weight:700;white-space:nowrap;cursor:pointer;flex-shrink:0;}
+  .chip-filter.active{background:var(--teal);border-color:var(--teal);color:#fff;}
+
+  #locateBtn{position:absolute;right:10px;top:10px;z-index:1000;background:#fff;border:none;border-radius:30px;padding:10px 14px;font-size:.8rem;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);display:flex;align-items:center;gap:6px;color:var(--teal-deep);cursor:pointer;}
+  #locateBtn:active{filter:brightness(.92);}
+
   main{flex:1;overflow:hidden;position:relative;}
   .view{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none;}
   .view.active{display:block;}
@@ -139,9 +146,17 @@
     <div class="counter"><div class="n" id="cPct">0%</div><div class="l">Completado</div></div>
   </div>
 
+  <div class="filterRow">
+    <button class="chip-filter active" data-filter="todos">Todos</button>
+    <button class="chip-filter" data-filter="urgentes">🔴 Urgentes</button>
+    <button class="chip-filter" data-filter="pendientes">🟡 Pendientes</button>
+    <button class="chip-filter" data-filter="listos">🟢 Listos</button>
+  </div>
+
   <main>
     <div class="view active" id="mapView">
       <div id="mapWrap">
+        <button id="locateBtn" onclick="goToNearest()">📍 Más cercana</button>
         <div id="leafletMap"></div>
         <div id="legend">
           <div><span class="dot" style="background:#3f7d5c"></span>Grabado listo</div>
@@ -260,6 +275,14 @@ function pinColor(m){
 }
 const PRIORIDAD_COLOR_OK = '#3f7d5c';
 
+let currentFilter = 'todos';
+function matchesFilter(m){
+  if(currentFilter==='urgentes') return !m.hecha && m.prioridad==='Alta';
+  if(currentFilter==='pendientes') return !m.hecha;
+  if(currentFilter==='listos') return m.hecha;
+  return true;
+}
+
 let leafletMap, markerLayer;
 function initLeaflet(){
   leafletMap = L.map('leafletMap', {zoomControl:false, attributionControl:true});
@@ -281,15 +304,45 @@ function renderMap(filterText=''){
   const filterLower = filterText.toLowerCase();
 
   matrices.forEach(m=>{
-    const matches = !filterText || m.nombre.toLowerCase().includes(filterLower);
+    const matchesText = !filterText || m.nombre.toLowerCase().includes(filterLower);
+    const matchesChip = matchesFilter(m);
+    const matches = matchesText && matchesChip;
     const icon = L.divIcon({
       className:'pin-icon',
-      html:`<div class="dotcore" style="background:${pinColor(m)};opacity:${matches?1:0.25}"></div>`,
+      html:`<div class="dotcore" style="background:${pinColor(m)};opacity:${matches?1:0.2}"></div>`,
       iconSize:[22,22], iconAnchor:[11,11]
     });
     const marker = L.marker([m.lat, m.lon], {icon}).addTo(markerLayer);
     marker.on('click', ()=> openSheet(m.id));
   });
+}
+
+/* ---------- "MÁS CERCANA" (geolocalización) ---------- */
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function goToNearest(){
+  if(!navigator.geolocation){ toast('Este dispositivo no da ubicación'); return; }
+  toast('Buscando tu ubicación...');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const {latitude, longitude} = pos.coords;
+    const pendientes = matrices.filter(m=>!m.hecha);
+    const candidatas = pendientes.length ? pendientes : matrices;
+    let best=null, bestDist=Infinity;
+    candidatas.forEach(m=>{
+      const d = haversine(latitude, longitude, m.lat, m.lon);
+      if(d<bestDist){ bestDist=d; best=m; }
+    });
+    if(best){
+      leafletMap.setView([best.lat, best.lon], 15);
+      openSheet(best.id);
+      toast(`${best.nombre} a ${bestDist.toFixed(1)} km`);
+    }
+  }, ()=>{
+    toast('No se pudo obtener tu ubicación (revisa permisos)');
+  }, {enableHighAccuracy:true, timeout:8000});
 }
 
 /* ---------- SHEET (detail) ---------- */
@@ -319,10 +372,33 @@ function openSheet(id, justSaved=false){
     <div class="btnrow">
       <button class="big primary" onclick="openForm('${m.id}')">➕ Nueva Prueba de Estado</button>
       <button class="big quick" onclick="quickMark('${m.id}')">🖼️ Marcar grabado aquí</button>
+      ${ultimaPrueba ? `<button class="big secondary" onclick="undoLast('${m.id}')">↩️ Deshacer último registro</button>` : ''}
     </div>
   `;
   document.getElementById('sheet').classList.add('open');
   document.getElementById('sheet').scrollTop = 0;
+}
+
+async function undoLast(matrizId){
+  const pruebasMatriz = pruebas.filter(p=>p.matrizId===matrizId).sort((a,b)=>b.timestamp-a.timestamp);
+  const ultima = pruebasMatriz[0];
+  if(!ultima) return;
+  if(!confirm('¿Eliminar el último registro de esta matriz? No se puede deshacer.')) return;
+
+  await new Promise(res=>{
+    const r = txStore('pruebas','readwrite').delete(ultima.idPrueba);
+    r.onsuccess = ()=>res(true);
+  });
+  pruebas = pruebas.filter(p=>p.idPrueba !== ultima.idPrueba);
+
+  const m = matrices.find(x=>x.id===matrizId);
+  const quedan = pruebas.filter(p=>p.matrizId===matrizId);
+  m.hecha = quedan.some(p=>p.estadoGrabado);
+  await putOne('matrices', m);
+
+  renderMap(); renderList(); renderGallery(); renderCounters();
+  openSheet(matrizId);
+  toast('Último registro eliminado ↩️');
 }
 function openLightbox(src){
   const bg = document.createElement('div');
@@ -419,13 +495,13 @@ function fileToBase64(file){
 /* ---------- LIST VIEW ---------- */
 function renderList(filterText=''){
   const ul = document.getElementById('listUl');
-  const list = matrices.filter(m=>m.nombre.toLowerCase().includes(filterText.toLowerCase()));
+  const list = matrices.filter(m=> m.nombre.toLowerCase().includes(filterText.toLowerCase()) && matchesFilter(m));
   ul.innerHTML = list.map(m=>`
     <li onclick="switchView('mapView'); openSheet('${m.id}')">
       <div class="info"><b>${m.nombre}</b><span>${m.id} · ${m.hecha?'Grabado':'Pendiente'}</span></div>
       <span class="chip" style="background:${pinColor(m)}">${m.hecha?'OK':m.prioridad}</span>
     </li>
-  `).join('') || '<div class="emptystate">Sin resultados para tu búsqueda.</div>';
+  `).join('') || '<div class="emptystate">Sin resultados con este filtro.</div>';
 }
 
 /* ---------- GALLERY ---------- */
@@ -443,6 +519,17 @@ function renderGallery(){
 document.getElementById('searchInput').addEventListener('input', e=>{
   renderMap(e.target.value);
   renderList(e.target.value);
+});
+
+/* ---------- FILTER CHIPS ---------- */
+document.querySelectorAll('.chip-filter').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    currentFilter = chip.dataset.filter;
+    document.querySelectorAll('.chip-filter').forEach(c=>c.classList.toggle('active', c===chip));
+    const q = document.getElementById('searchInput').value;
+    renderMap(q);
+    renderList(q);
+  });
 });
 
 /* ---------- TABS ---------- */
