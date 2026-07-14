@@ -330,7 +330,10 @@ function renderMap(filterText=''){
       iconSize:[22,22], iconAnchor:[11,11]
     });
     const marker = L.marker([m.lat, m.lon], {icon}).addTo(markerLayer);
-    marker.on('click', ()=> openSheet(m.id));
+    marker.on('click', e=>{
+      L.DomEvent.stopPropagation(e);
+      openSheet(m.id);
+    });
   });
 }
 
