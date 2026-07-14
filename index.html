@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Atelier Futa</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2f5d5a">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{
+    --teal-deep:#1f4643;
+    --teal:#2f5d5a;
+    --teal-light:#5c8b86;
+    --mist:#eef2ee;
+    --paper:#faf8f3;
+    --clay:#c0703f;
+    --alta:#b6452c;
+    --media:#c99a2e;
+    --baja:#5c7a8a;
+    --ok:#3f7d5c;
+    --ink:#1c2624;
+    --radius:18px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--mist);color:var(--ink);overscroll-behavior:none;}
+  #app{max-width:520px;margin:0 auto;height:100dvh;display:flex;flex-direction:column;background:var(--paper);position:relative;}
+
+  header.top{background:linear-gradient(180deg,var(--teal-deep),var(--teal));color:#fff;padding:14px 16px 12px;flex-shrink:0;}
+  header.top h1{margin:0;font-size:1.5rem;letter-spacing:.3px;font-weight:700;}
+  header.top p{margin:2px 0 0;font-size:.8rem;opacity:.85;}
+
+  .search{margin:12px 16px 0;background:#fff;border-radius:14px;display:flex;align-items:center;padding:10px 14px;gap:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);flex-shrink:0;}
+  .search input{border:none;outline:none;flex:1;font-size:1rem;background:transparent;}
+
+  .counters{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 16px;flex-shrink:0;}
+  .counter{background:#fff;border-radius:12px;padding:8px 6px;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.06);}
+  .counter .n{font-size:1.25rem;font-weight:800;line-height:1;}
+  .counter .l{font-size:.62rem;text-transform:uppercase;letter-spacing:.4px;color:#667;margin-top:3px;}
+  .counter.urgentes .n{color:var(--alta);}
+  .counter.pendientes .n{color:var(--media);}
+  .counter.listos .n{color:var(--ok);}
+
+  .filterRow{display:flex;gap:8px;margin:0 16px 12px;flex-shrink:0;overflow-x:auto;}
+  .chip-filter{border:2px solid #d8d4c8;background:#fff;color:#556;padding:8px 14px;border-radius:30px;font-size:.78rem;font-weight:700;white-space:nowrap;cursor:pointer;flex-shrink:0;}
+  .chip-filter.active{background:var(--teal);border-color:var(--teal);color:#fff;}
+
+  #locateBtn{position:absolute;right:10px;top:10px;z-index:1000;background:#fff;border:none;border-radius:30px;padding:10px 14px;font-size:.8rem;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);display:flex;align-items:center;gap:6px;color:var(--teal-deep);cursor:pointer;}
+  #locateBtn:active{filter:brightness(.92);}
+
+  main{flex:1;overflow:hidden;position:relative;}
+  .view{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none;}
+  .view.active{display:block;}
+
+  /* MAP */
+  #mapWrap{position:relative;width:100%;height:100%;overflow:hidden;background:#cfded4;}
+  #leafletMap{width:100%;height:100%;}
+  .pin-icon{cursor:pointer;}
+  .pin-icon .dotcore{width:22px;height:22px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);transition:transform .15s;}
+  .pin-icon:active .dotcore{transform:scale(1.25);}
+  .leaflet-control-attribution{font-size:.6rem !important;}
+
+  #legend{position:absolute;left:10px;bottom:10px;background:rgba(255,255,255,.92);border-radius:12px;padding:8px 10px;font-size:.68rem;box-shadow:0 1px 3px rgba(0,0,0,.15);z-index:1000;}
+  #legend div{display:flex;align-items:center;gap:6px;margin:2px 0;}
+  #legend span.dot{width:10px;height:10px;border-radius:50%;display:inline-block;}
+
+  /* DETAIL SHEET */
+  #sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:20px 20px 0 0;box-shadow:0 -4px 20px rgba(0,0,0,.15);padding:16px 18px 20px;transform:translateY(105%);transition:transform .25s ease;max-height:70%;overflow-y:auto;}
+  #sheet.open{transform:translateY(0);}
+  #sheet .handle{width:40px;height:4px;background:#ddd;border-radius:2px;margin:0 auto 10px;}
+  #sheet h2{margin:8px 0 2px;font-size:1.2rem;}
+  .sheetPhoto{width:100%;height:170px;object-fit:cover;border-radius:14px;margin-bottom:10px;cursor:zoom-in;}
+  .sheetPhoto.justSaved{animation:flashOk .7s ease;}
+  @keyframes flashOk{
+    0%{box-shadow:0 0 0 0 rgba(63,125,92,.9);}
+    60%{box-shadow:0 0 0 14px rgba(63,125,92,0);}
+    100%{box-shadow:0 0 0 0 rgba(63,125,92,0);}
+  }
+  .sheetPhotoEmpty{width:100%;height:90px;border-radius:14px;background:#f1efe8;border:1.5px dashed #cfcabf;display:flex;align-items:center;justify-content:center;color:#998;font-size:.82rem;margin-bottom:10px;}
+  .estadoLinea{margin:0 0 4px;font-size:.85rem;color:#556;}
+  hr.divider{border:none;border-top:1px solid #eee;margin:14px 0;}
+  .badge{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:20px;color:#fff;margin-bottom:8px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 14px;font-size:.85rem;}
+  .grid2 div b{display:block;color:#667;font-weight:600;font-size:.7rem;text-transform:uppercase;}
+  .btnrow{display:flex;flex-direction:column;gap:10px;}
+  button.big{border:none;border-radius:14px;padding:16px;font-size:1rem;font-weight:700;width:100%;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;}
+  button.primary{background:var(--teal);color:#fff;}
+  button.secondary{background:#fff;border:2px solid var(--teal);color:var(--teal);}
+  button.quick{background:var(--clay);color:#fff;}
+  button.big:active{filter:brightness(.9);}
+
+  /* LIST VIEW */
+  #listView ul{list-style:none;margin:0;padding:8px 12px 90px;}
+  #listView li{background:#fff;border-radius:14px;padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 2px rgba(0,0,0,.06);}
+  #listView li .info b{display:block;font-size:.95rem;}
+  #listView li .info span{font-size:.72rem;color:#778;}
+  .chip{font-size:.65rem;font-weight:700;color:#fff;padding:3px 8px;border-radius:20px;}
+
+  /* GALLERY */
+  #galView{padding:14px 16px 90px;}
+  #galGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+  #galGrid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;}
+  .emptystate{text-align:center;color:#889;padding:60px 20px;font-size:.9rem;}
+
+  /* CONFIG */
+  #cfgView{padding:16px;}
+  #cfgView .row{background:#fff;border-radius:12px;padding:14px;margin-bottom:10px;font-size:.9rem;}
+
+  nav.bottom{display:flex;flex-shrink:0;border-top:1px solid #e3e3df;background:#fff;}
+  nav.bottom button{flex:1;border:none;background:none;padding:10px 0 8px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:.62rem;color:#889;cursor:pointer;}
+  nav.bottom button.active{color:var(--teal);font-weight:700;}
+  nav.bottom svg{width:22px;height:22px;}
+
+  /* MODAL FORM */
+  #modalBg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;z-index:50;}
+  #modalBg.open{display:flex;}
+  #modal{background:#fff;width:100%;max-width:520px;margin:0 auto;border-radius:20px 20px 0 0;padding:18px;max-height:88vh;overflow-y:auto;}
+  #modal h3{margin:0 0 12px;}
+  #modal label{font-size:.75rem;font-weight:700;color:#556;display:block;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.3px;}
+  #modal select, #modal textarea{width:100%;padding:10px;border-radius:10px;border:1.5px solid #ddd;font-size:.95rem;font-family:inherit;}
+  #modal textarea{resize:none;height:60px;}
+
+  .photoBox{width:100%;height:150px;border-radius:16px;border:2.5px dashed #c7c2b4;background:#f7f5ee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:#887;font-size:.85rem;font-weight:600;cursor:pointer;overflow:hidden;position:relative;}
+  .photoBox img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+  .photoBox .retake{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;font-size:.68rem;padding:4px 10px;border-radius:20px;}
+
+  .stateCards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+  .stateCard{border:2.5px solid #e3e0d5;border-radius:14px;padding:12px 4px;text-align:center;cursor:pointer;background:#fff;}
+  .stateCard .ic{font-size:1.4rem;display:block;}
+  .stateCard .tx{font-size:.68rem;font-weight:700;color:#667;margin-top:3px;display:block;}
+  .stateCard.sel-listo{border-color:var(--ok);background:#eef6f0;}
+  .stateCard.sel-revisar{border-color:var(--media);background:#fbf4e3;}
+  .stateCard.sel-danada{border-color:var(--alta);background:#fbeae5;}
+
+  .prioChips{display:flex;gap:6px;flex-wrap:wrap;}
+  .prioChip{border:2px solid #ddd;border-radius:20px;padding:7px 12px;font-size:.75rem;font-weight:700;color:#667;cursor:pointer;background:#fff;}
+  .prioChip.active{color:#fff;border-color:transparent;}
+
+  #toast{position:fixed;left:50%;bottom:100px;transform:translate(-50%,20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:30px;font-size:.9rem;opacity:0;transition:all .25s;z-index:60;pointer-events:none;white-space:nowrap;}
+  #toast.show{opacity:1;transform:translate(-50%,0);}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header class="top">
+    <h1>Atelier Futa</h1>
+    <p>Futaleufú · Patagonia</p>
+  </header>
+
+  <div class="search">
+    <span>🔎</span>
+    <input id="searchInput" placeholder="Buscar sitio, ruta o material...">
+  </div>
+
+  <div class="counters">
+    <div class="counter"><div class="n" id="cTotal">0</div><div class="l">Total</div></div>
+    <div class="counter listos"><div class="n" id="cListos">0</div><div class="l">Listos</div></div>
+    <div class="counter pendientes"><div class="n" id="cPendientes">0</div><div class="l">Pendientes</div></div>
+    <div class="counter urgentes"><div class="n" id="cUrgentes">0</div><div class="l">Urgentes</div></div>
+    <div class="counter"><div class="n" id="cNoUrgentes">0</div><div class="l">No urgentes</div></div>
+    <div class="counter"><div class="n" id="cPct">0%</div><div class="l">Completado</div></div>
+  </div>
+
+  <div class="filterRow">
+    <button class="chip-filter active" data-filter="todos">Todos</button>
+    <button class="chip-filter" data-filter="urgentes">🔴 Urgentes</button>
+    <button class="chip-filter" data-filter="pendientes">🟡 Pendientes</button>
+    <button class="chip-filter" data-filter="listos">🟢 Listos</button>
+  </div>
+
+  <main>
+    <div class="view active" id="mapView">
+      <div id="mapWrap">
+        <button id="locateBtn" onclick="goToNearest()">📍 Más cercana</button>
+        <div id="leafletMap"></div>
+        <div id="legend">
+          <div><span class="dot" style="background:#3f7d5c"></span>Grabado listo</div>
+          <div><span class="dot" style="background:#b6452c"></span>Urgente pendiente</div>
+          <div><span class="dot" style="background:#c99a2e"></span>Media pendiente</div>
+          <div><span class="dot" style="background:#5c7a8a"></span>Baja pendiente</div>
+        </div>
+      </div>
+      <div id="sheet">
+        <div class="handle"></div>
+        <div id="sheetContent"></div>
+      </div>
+    </div>
+
+    <div class="view" id="listView"><ul id="listUl"></ul></div>
+
+    <div class="view" id="galView">
+      <div id="galGrid"></div>
+    </div>
+
+    <div class="view" id="cfgView">
+      <div class="row"><b>Matrices totales:</b> 40 · Futaleufú, Patagonia</div>
+      <div class="row">Los datos se guardan en este dispositivo (IndexedDB) y funcionan sin señal. Al reconectar, se pueden sincronizar a un backend (ver README del proyecto).</div>
+      <button class="big secondary" onclick="resetAll()">🗑️ Reiniciar datos de prueba</button>
+    </div>
+  </main>
+
+  <nav class="bottom">
+    <button class="tab active" data-view="mapView">📍<span>Mapa</span></button>
+    <button class="tab" data-view="listView">📋<span>Lista</span></button>
+    <button class="tab" data-view="galView">🖼️<span>Galería</span></button>
+    <button class="tab" data-view="cfgView">⚙️<span>Config</span></button>
+  </nav>
+</div>
+
+<div id="modalBg">
+  <div id="modal"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ---------- DATA ---------- */
+const MATRICES_SEED = [{"id": "M01", "nombre": "Lago Espolón Norte", "lat": -43.123, "lon": -71.856, "hecha": false, "prioridad": "Alta"}, {"id": "M02", "nombre": "Lago Leal", "lat": -43.145, "lon": -71.892, "hecha": false, "prioridad": "Media"}, {"id": "M03", "nombre": "Río Futaleufú Puente", "lat": -43.167, "lon": -71.901, "hecha": false, "prioridad": "Alta"}, {"id": "M04", "nombre": "Mirador Cóndor", "lat": -43.182, "lon": -71.834, "hecha": false, "prioridad": "Media"}, {"id": "M05", "nombre": "Valle Río Azul", "lat": -43.098, "lon": -71.912, "hecha": false, "prioridad": "Alta"}, {"id": "M06", "nombre": "Termas El Amarillo", "lat": -43.234, "lon": -71.945, "hecha": false, "prioridad": "Media"}, {"id": "M07", "nombre": "Lago Yelcho Norte", "lat": -43.278, "lon": -72.012, "hecha": false, "prioridad": "Alta"}, {"id": "M08", "nombre": "Puerto Ramírez", "lat": -43.201, "lon": -71.878, "hecha": false, "prioridad": "Baja"}, {"id": "M09", "nombre": "Pasarela Río Espolón", "lat": -43.156, "lon": -71.823, "hecha": false, "prioridad": "Alta"}, {"id": "M10", "nombre": "Valle Las Escalas", "lat": -43.089, "lon": -71.967, "hecha": false, "prioridad": "Media"}, {"id": "M11", "nombre": "Cerro La Bandera", "lat": -43.178, "lon": -71.812, "hecha": false, "prioridad": "Alta"}, {"id": "M12", "nombre": "Lago Lonconao", "lat": -43.312, "lon": -71.934, "hecha": false, "prioridad": "Media"}, {"id": "M13", "nombre": "Puente Río Azul", "lat": -43.102, "lon": -71.905, "hecha": false, "prioridad": "Alta"}, {"id": "M14", "nombre": "Sector El Límite", "lat": -43.067, "lon": -72.021, "hecha": false, "prioridad": "Baja"}, {"id": "M15", "nombre": "Mirador Cara del Indio", "lat": -43.195, "lon": -71.798, "hecha": false, "prioridad": "Alta"}, {"id": "M16", "nombre": "Lago Escondido", "lat": -43.267, "lon": -71.876, "hecha": false, "prioridad": "Media"}, {"id": "M17", "nombre": "Rápidos Inferno", "lat": -43.142, "lon": -71.943, "hecha": false, "prioridad": "Alta"}, {"id": "M18", "nombre": "Valle Río Blanco", "lat": -43.221, "lon": -71.801, "hecha": false, "prioridad": "Media"}, {"id": "M19", "nombre": "Cerro Teta", "lat": -43.159, "lon": -71.772, "hecha": false, "prioridad": "Baja"}, {"id": "M20", "nombre": "Lago Las Rosas", "lat": -43.189, "lon": -71.991, "hecha": false, "prioridad": "Media"}, {"id": "M21", "nombre": "Puente Colgante Futa", "lat": -43.173, "lon": -71.869, "hecha": false, "prioridad": "Alta"}, {"id": "M22", "nombre": "Sendero Los Alerces", "lat": -43.245, "lon": -71.912, "hecha": false, "prioridad": "Media"}, {"id": "M23", "nombre": "Río Chico", "lat": -43.134, "lon": -71.934, "hecha": false, "prioridad": "Baja"}, {"id": "M24", "nombre": "Mirador Tres Monjas", "lat": -43.206, "lon": -71.845, "hecha": false, "prioridad": "Alta"}, {"id": "M25", "nombre": "Lago Pinto", "lat": -43.298, "lon": -71.889, "hecha": false, "prioridad": "Media"}, {"id": "M26", "nombre": "Sector Noroeste Lago", "lat": -43.112, "lon": -71.878, "hecha": false, "prioridad": "Alta"}, {"id": "M27", "nombre": "Roca del Cóndor", "lat": -43.187, "lon": -71.823, "hecha": false, "prioridad": "Media"}, {"id": "M28", "nombre": "Camping Río Espolón", "lat": -43.148, "lon": -71.831, "hecha": false, "prioridad": "Baja"}, {"id": "M29", "nombre": "Valle El Desagüe", "lat": -43.276, "lon": -71.956, "hecha": false, "prioridad": "Media"}, {"id": "M30", "nombre": "Cerro Derrumbe", "lat": -43.164, "lon": -71.791, "hecha": false, "prioridad": "Alta"}, {"id": "M31", "nombre": "Lago Verde Chico", "lat": -43.219, "lon": -71.968, "hecha": false, "prioridad": "Baja"}, {"id": "M32", "nombre": "Puente Palena Ruta 231", "lat": -43.089, "lon": -71.845, "hecha": false, "prioridad": "Media"}, {"id": "M33", "nombre": "Mirador La Cascada", "lat": -43.201, "lon": -71.911, "hecha": false, "prioridad": "Alta"}, {"id": "M34", "nombre": "Sector La Junta", "lat": -43.256, "lon": -71.834, "hecha": false, "prioridad": "Media"}, {"id": "M35", "nombre": "Rápidos Macal", "lat": -43.151, "lon": -71.952, "hecha": false, "prioridad": "Alta"}, {"id": "M36", "nombre": "Cerro Mesa", "lat": -43.178, "lon": -71.768, "hecha": false, "prioridad": "Baja"}, {"id": "M37", "nombre": "Lago Soberanía", "lat": -43.289, "lon": -71.923, "hecha": false, "prioridad": "Media"}, {"id": "M38", "nombre": "Valle California", "lat": -43.223, "lon": -71.789, "hecha": false, "prioridad": "Media"}, {"id": "M39", "nombre": "Mirador Puerto Futa", "lat": -43.169, "lon": -71.856, "hecha": false, "prioridad": "Alta"}, {"id": "M40", "nombre": "Entrada Parque Pumalín Sur", "lat": -43.334, "lon": -71.978, "hecha": false, "prioridad": "Baja"}];
+
+const PRIORIDAD_COLOR = {Alta:'#b6452c', Media:'#c99a2e', Baja:'#5c7a8a'};
+
+/* ---------- INDEXEDDB ---------- */
+let db;
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const req = indexedDB.open('atelier-futa', 1);
+    req.onupgradeneeded = e=>{
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains('matrices')) d.createObjectStore('matrices',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('pruebas')) d.createObjectStore('pruebas',{keyPath:'idPrueba'});
+    };
+    req.onsuccess = e=>{ db=e.target.result; resolve(db); };
+    req.onerror = e=> reject(e);
+  });
+}
+function txStore(name, mode){ return db.transaction(name, mode).objectStore(name); }
+function getAll(store){
+  return new Promise(res=>{
+    const out=[]; const cur = txStore(store,'readonly').openCursor();
+    cur.onsuccess = e=>{ const c = e.target.result; if(c){ out.push(c.value); c.continue(); } else res(out); };
+  });
+}
+function putOne(store, val){
+  return new Promise(res=>{
+    const r = txStore(store,'readwrite').put(val);
+    r.onsuccess = ()=>res(true);
+  });
+}
+
+/* ---------- STATE ---------- */
+let matrices = [];
+let pruebas = [];
+let activeId = null;
+
+async function init(){
+  await openDB();
+  matrices = await getAll('matrices');
+  if(matrices.length===0){
+    for(const m of MATRICES_SEED){ await putOne('matrices', m); }
+    matrices = await getAll('matrices');
+  }
+  pruebas = await getAll('pruebas');
+  renderMap();
+  renderList();
+  renderGallery();
+  renderCounters();
+  registerSW();
+}
+
+/* ---------- COUNTERS ---------- */
+function renderCounters(){
+  const total = matrices.length;
+  const listos = matrices.filter(m=>m.hecha).length;
+  const pendientes = total - listos;
+  const urgentes = matrices.filter(m=>!m.hecha && m.prioridad==='Alta').length;
+  const noUrgentes = pendientes - urgentes;
+  const pct = total ? Math.round((listos/total)*100) : 0;
+  cTotal.textContent = total;
+  cListos.textContent = listos;
+  cPendientes.textContent = pendientes;
+  cUrgentes.textContent = urgentes;
+  cNoUrgentes.textContent = noUrgentes;
+  cPct.textContent = pct + '%';
+}
+
+/* ---------- MAP (Leaflet + OpenStreetMap) ---------- */
+function pinColor(m){
+  if(m.hecha) return PRIORIDAD_COLOR_OK;
+  return PRIORIDAD_COLOR[m.prioridad] || '#5c7a8a';
+}
+const PRIORIDAD_COLOR_OK = '#3f7d5c';
+
+let currentFilter = 'todos';
+function matchesFilter(m){
+  if(currentFilter==='urgentes') return !m.hecha && m.prioridad==='Alta';
+  if(currentFilter==='pendientes') return !m.hecha;
+  if(currentFilter==='listos') return m.hecha;
+  return true;
+}
+
+let leafletMap, markerLayer;
+function initLeaflet(){
+  leafletMap = L.map('leafletMap', {zoomControl:false, attributionControl:true});
+  L.control.zoom({position:'bottomright'}).addTo(leafletMap);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(leafletMap);
+  markerLayer = L.layerGroup().addTo(leafletMap);
+
+  const bounds = L.latLngBounds(matrices.map(m=>[m.lat, m.lon]));
+  leafletMap.fitBounds(bounds, {padding:[30,30]});
+  closeSheetOnMapTap();
+}
+
+function renderMap(filterText=''){
+  if(!leafletMap){ initLeaflet(); }
+  markerLayer.clearLayers();
+  const filterLower = filterText.toLowerCase();
+
+  matrices.forEach(m=>{
+    const matchesText = !filterText || m.nombre.toLowerCase().includes(filterLower);
+    const matchesChip = matchesFilter(m);
+    const matches = matchesText && matchesChip;
+    const icon = L.divIcon({
+      className:'pin-icon',
+      html:`<div class="dotcore" style="background:${pinColor(m)};opacity:${matches?1:0.2}"></div>`,
+      iconSize:[22,22], iconAnchor:[11,11]
+    });
+    const marker = L.marker([m.lat, m.lon], {icon}).addTo(markerLayer);
+    marker.on('click', e=>{
+      try{
+        L.DomEvent.stopPropagation(e);
+        openSheet(m.id);
+      }catch(err){
+        console.error(err);
+        toast('⚠️ Error: ' + err.message);
+      }
+    });
+  });
+}
+
+/* ---------- "MÁS CERCANA" (geolocalización) ---------- */
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function goToNearest(){
+  if(!navigator.geolocation){ toast('Este dispositivo no da ubicación'); return; }
+  toast('Buscando tu ubicación...');
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const {latitude, longitude} = pos.coords;
+    const pendientes = matrices.filter(m=>!m.hecha);
+    const candidatas = pendientes.length ? pendientes : matrices;
+    let best=null, bestDist=Infinity;
+    candidatas.forEach(m=>{
+      const d = haversine(latitude, longitude, m.lat, m.lon);
+      if(d<bestDist){ bestDist=d; best=m; }
+    });
+    if(best){
+      leafletMap.setView([best.lat, best.lon], 15);
+      openSheet(best.id);
+      toast(`${best.nombre} a ${bestDist.toFixed(1)} km`);
+    }
+  }, ()=>{
+    toast('No se pudo obtener tu ubicación (revisa permisos)');
+  }, {enableHighAccuracy:true, timeout:8000});
+}
+
+/* ---------- SHEET (detail) ---------- */
+function openSheet(id, justSaved=false){
+  activeId = id;
+  regFotoData = null; regEstado = null; regPrioridad = null;
+  const m = matrices.find(x=>x.id===id);
+  const pruebasMatriz = pruebas.filter(p=>p.matrizId===id).sort((a,b)=>b.timestamp-a.timestamp);
+  const ultimaPrueba = pruebasMatriz[0];
+  const ultimaFoto = pruebasMatriz.find(p=>p.foto);
+  const color = pinColor(m);
+
+  const estadoTexto = m.hecha
+    ? (ultimaPrueba ? `Grabado confirmado el ${new Date(ultimaPrueba.timestamp).toLocaleDateString()}` : 'Grabado confirmado')
+    : 'Sin registro fotográfico aún';
+
+  document.getElementById('sheetContent').innerHTML = `
+    ${ultimaFoto ? `<img src="${ultimaFoto.foto}" class="sheetPhoto${justSaved ? ' justSaved' : ''}" onclick="openLightbox('${ultimaFoto.foto}')">` : `<div class="sheetPhotoEmpty">📷 Todavía no hay foto de esta matriz</div>`}
+    <span class="badge" style="background:${color}">${m.hecha ? 'GRABADO LISTO' : 'PENDIENTE · ' + m.prioridad.toUpperCase()}</span>
+    <h2>${m.nombre}</h2>
+    <p class="estadoLinea">${estadoTexto}</p>
+
+    <hr class="divider">
+
+    <label>1. Foto (toca para abrir la cámara)</label>
+    <input id="regFotoInput" type="file" accept="image/*" capture="environment" style="display:none">
+    <div class="photoBox" id="photoBox" onclick="document.getElementById('regFotoInput').click()">
+      <span style="font-size:1.6rem">📷</span>
+      <span>Toca para tomar foto</span>
+    </div>
+
+    <label>2. ¿Cómo quedó?</label>
+    <div class="stateCards">
+      <div class="stateCard" data-estado="listo" onclick="pickEstado('listo')">
+        <span class="ic">🟢</span><span class="tx">Listo</span>
+      </div>
+      <div class="stateCard" data-estado="revisar" onclick="pickEstado('revisar')">
+        <span class="ic">🟡</span><span class="tx">A revisar</span>
+      </div>
+      <div class="stateCard" data-estado="danada" onclick="pickEstado('danada')">
+        <span class="ic">🔴</span><span class="tx">Dañada / perdida</span>
+      </div>
+    </div>
+
+    <label>3. Prioridad (si aún falta trabajo)</label>
+    <div class="prioChips" id="prioChips">
+      <div class="prioChip" data-p="Alta" onclick="pickPrioridad('Alta')">Alta</div>
+      <div class="prioChip" data-p="Media" onclick="pickPrioridad('Media')">Media</div>
+      <div class="prioChip" data-p="Baja" onclick="pickPrioridad('Baja')">Baja</div>
+    </div>
+
+    <label>Notas (opcional)</label>
+    <textarea id="regNotas" placeholder="Observaciones..."></textarea>
+
+    <div class="btnrow" style="margin-top:16px">
+      <button class="big primary" onclick="submitRegistro('${m.id}')">Guardar registro</button>
+      ${ultimaPrueba ? `<button class="big secondary" onclick="undoLast('${m.id}')">↩️ Deshacer último registro</button>` : ''}
+    </div>
+  `;
+  document.getElementById('regFotoInput').addEventListener('change', async e=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    regFotoData = await fileToBase64(file);
+    const box = document.getElementById('photoBox');
+    box.innerHTML = `<img src="${regFotoData}"><span class="retake">Toca para repetir</span>`;
+  });
+  document.getElementById('sheet').classList.add('open');
+  document.getElementById('sheet').scrollTop = 0;
+}
+
+let regFotoData = null;
+let regEstado = null;
+let regPrioridad = null;
+
+function pickEstado(estado){
+  regEstado = estado;
+  document.querySelectorAll('.stateCard').forEach(c=>{
+    c.classList.remove('sel-listo','sel-revisar','sel-danada');
+    if(c.dataset.estado===estado) c.classList.add('sel-'+estado);
+  });
+  if(estado==='listo'){
+    regPrioridad = null;
+    document.querySelectorAll('.prioChip').forEach(c=>c.classList.remove('active'));
+  }
+}
+const PRIO_CHIP_COLOR = {Alta:'#b6452c', Media:'#c99a2e', Baja:'#5c7a8a'};
+function pickPrioridad(p){
+  regPrioridad = p;
+  document.querySelectorAll('.prioChip').forEach(c=>{
+    const on = c.dataset.p===p;
+    c.classList.toggle('active', on);
+    c.style.background = on ? PRIO_CHIP_COLOR[p] : '#fff';
+    c.style.borderColor = on ? PRIO_CHIP_COLOR[p] : '#ddd';
+  });
+}
+
+async function submitRegistro(matrizId){
+  if(!regEstado){ toast('Elige cómo quedó la matriz'); return; }
+  const notas = document.getElementById('regNotas').value;
+  const condicionTexto = {listo:'Buena', revisar:'A revisar', danada:'Dañada / perdida'}[regEstado];
+
+  await saveRegistro(matrizId, {
+    condicion: condicionTexto,
+    prioridad: regEstado==='listo' ? null : (regPrioridad || 'Media'),
+    notas,
+    foto: regFotoData,
+    marcaGrabado: regEstado==='listo'
+  });
+  if(navigator.vibrate) navigator.vibrate(80);
+  toast('Registro guardado ✔');
+}
+
+async function undoLast(matrizId){
+  const pruebasMatriz = pruebas.filter(p=>p.matrizId===matrizId).sort((a,b)=>b.timestamp-a.timestamp);
+  const ultima = pruebasMatriz[0];
+  if(!ultima) return;
+  if(!confirm('¿Eliminar el último registro de esta matriz? No se puede deshacer.')) return;
+
+  await new Promise(res=>{
+    const r = txStore('pruebas','readwrite').delete(ultima.idPrueba);
+    r.onsuccess = ()=>res(true);
+  });
+  pruebas = pruebas.filter(p=>p.idPrueba !== ultima.idPrueba);
+
+  const m = matrices.find(x=>x.id===matrizId);
+  const quedan = pruebas.filter(p=>p.matrizId===matrizId);
+  m.hecha = quedan.some(p=>p.estadoGrabado);
+  await putOne('matrices', m);
+
+  renderMap(); renderList(); renderGallery(); renderCounters();
+  openSheet(matrizId);
+  toast('Último registro eliminado ↩️');
+}
+function openLightbox(src){
+  const bg = document.createElement('div');
+  bg.setAttribute('style','position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:80;display:flex;align-items:center;justify-content:center;');
+  bg.innerHTML = `<img src="${src}" style="max-width:92%;max-height:80%;border-radius:10px;">`;
+  bg.onclick = ()=> bg.remove();
+  document.body.appendChild(bg);
+}
+function closeSheetOnMapTap(){
+  if(leafletMap) leafletMap.on('click', ()=> document.getElementById('sheet').classList.remove('open'));
+}
+
+async function saveRegistro(matrizId, {condicion, prioridad, notas, foto, marcaGrabado}){
+  const idPrueba = 'P' + Date.now();
+  const registro = {
+    idPrueba, matrizId, timestamp: Date.now(),
+    condicion, prioridad, notas, foto,
+    estadoGrabado: marcaGrabado ? true : false
+  };
+  await putOne('pruebas', registro);
+  pruebas.push(registro);
+
+  const m = matrices.find(x=>x.id===matrizId);
+  m.hecha = !!marcaGrabado;
+  if(prioridad) m.prioridad = prioridad;
+  await putOne('matrices', m);
+
+  renderMap();
+  renderList();
+  renderGallery();
+  renderCounters();
+  if(activeId===matrizId) openSheet(matrizId, true);
+}
+
+function fileToBase64(file){
+  return new Promise(res=>{
+    const r = new FileReader();
+    r.onload = ()=>res(r.result);
+    r.readAsDataURL(file);
+  });
+}
+
+/* ---------- LIST VIEW ---------- */
+function renderList(filterText=''){
+  const ul = document.getElementById('listUl');
+  const list = matrices.filter(m=> m.nombre.toLowerCase().includes(filterText.toLowerCase()) && matchesFilter(m));
+  ul.innerHTML = list.map(m=>`
+    <li onclick="switchView('mapView'); openSheet('${m.id}')">
+      <div class="info"><b>${m.nombre}</b><span>${m.id} · ${m.hecha?'Grabado':'Pendiente'}</span></div>
+      <span class="chip" style="background:${pinColor(m)}">${m.hecha?'OK':m.prioridad}</span>
+    </li>
+  `).join('') || '<div class="emptystate">Sin resultados con este filtro.</div>';
+}
+
+/* ---------- GALLERY ---------- */
+function renderGallery(){
+  const withPhoto = pruebas.filter(p=>p.foto);
+  const grid = document.getElementById('galGrid');
+  if(withPhoto.length===0){
+    grid.innerHTML = '<div class="emptystate" style="grid-column:1/-1">Todavía no hay fotos registradas.<br>Usa "🖼️ Marcar grabado aquí" en una matriz.</div>';
+    return;
+  }
+  grid.innerHTML = withPhoto.sort((a,b)=>b.timestamp-a.timestamp).map(p=>`<img src="${p.foto}" title="${p.matrizId}">`).join('');
+}
+
+/* ---------- SEARCH ---------- */
+document.getElementById('searchInput').addEventListener('input', e=>{
+  renderMap(e.target.value);
+  renderList(e.target.value);
+});
+
+/* ---------- FILTER CHIPS ---------- */
+document.querySelectorAll('.chip-filter').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    currentFilter = chip.dataset.filter;
+    document.querySelectorAll('.chip-filter').forEach(c=>c.classList.toggle('active', c===chip));
+    const q = document.getElementById('searchInput').value;
+    renderMap(q);
+    renderList(q);
+  });
+});
+
+/* ---------- TABS ---------- */
+function switchView(id){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('nav.bottom button').forEach(b=>b.classList.toggle('active', b.dataset.view===id));
+  if(id==='mapView' && leafletMap) setTimeout(()=>leafletMap.invalidateSize(), 50);
+}
+document.querySelectorAll('nav.bottom button').forEach(b=>{
+  b.addEventListener('click', ()=>switchView(b.dataset.view));
+});
+
+/* ---------- TOAST ---------- */
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---------- RESET (config tab) ---------- */
+async function resetAll(){
+  if(!confirm('Esto borra todos los registros de prueba guardados en este dispositivo. ¿Continuar?')) return;
+  const dbReq = indexedDB.deleteDatabase('atelier-futa');
+  dbReq.onsuccess = ()=> location.reload();
+}
+
+/* ---------- SERVICE WORKER (offline cache, activo solo si se despliega fuera de este preview) ---------- */
+function registerSW(){
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(()=>{ /* no disponible en este entorno de previsualización */ });
+  }
+}
+
+window.addEventListener('error', e=>{
+  toast('⚠️ Error: ' + e.message);
+});
+
+init();
+</script>
+</body>
+</html>
