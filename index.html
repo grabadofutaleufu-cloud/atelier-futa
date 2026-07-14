@@ -79,6 +79,7 @@
   }
   .sheetPhotoEmpty{width:100%;height:90px;border-radius:14px;background:#f1efe8;border:1.5px dashed #cfcabf;display:flex;align-items:center;justify-content:center;color:#998;font-size:.82rem;margin-bottom:10px;}
   .estadoLinea{margin:0 0 4px;font-size:.85rem;color:#556;}
+  hr.divider{border:none;border-top:1px solid #eee;margin:14px 0;}
   .badge{display:inline-block;font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:20px;color:#fff;margin-bottom:8px;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 14px;font-size:.85rem;}
   .grid2 div b{display:block;color:#667;font-weight:600;font-size:.7rem;text-transform:uppercase;}
@@ -364,6 +365,7 @@ function goToNearest(){
 /* ---------- SHEET (detail) ---------- */
 function openSheet(id, justSaved=false){
   activeId = id;
+  regFotoData = null; regEstado = null; regPrioridad = null;
   const m = matrices.find(x=>x.id===id);
   const pruebasMatriz = pruebas.filter(p=>p.matrizId===id).sort((a,b)=>b.timestamp-a.timestamp);
   const ultimaPrueba = pruebasMatriz[0];
@@ -379,64 +381,8 @@ function openSheet(id, justSaved=false){
     <span class="badge" style="background:${color}">${m.hecha ? 'GRABADO LISTO' : 'PENDIENTE · ' + m.prioridad.toUpperCase()}</span>
     <h2>${m.nombre}</h2>
     <p class="estadoLinea">${estadoTexto}</p>
-    <div class="grid2">
-      <div><b>ID</b>${m.id}</div>
-      <div><b>Lat / Lon</b>${m.lat.toFixed(3)}, ${m.lon.toFixed(3)}</div>
-      <div><b>Última prueba</b>${ultimaPrueba ? new Date(ultimaPrueba.timestamp).toLocaleDateString() : '—'}</div>
-      <div><b>Condición</b>${ultimaPrueba ? ultimaPrueba.condicion : '—'}</div>
-    </div>
-    <div class="btnrow">
-      <button class="big primary" onclick="openRegistro('${m.id}')">📝 Registrar en esta matriz</button>
-      ${ultimaPrueba ? `<button class="big secondary" onclick="undoLast('${m.id}')">↩️ Deshacer último registro</button>` : ''}
-    </div>
-  `;
-  document.getElementById('sheet').classList.add('open');
-  document.getElementById('sheet').scrollTop = 0;
-}
 
-async function undoLast(matrizId){
-  const pruebasMatriz = pruebas.filter(p=>p.matrizId===matrizId).sort((a,b)=>b.timestamp-a.timestamp);
-  const ultima = pruebasMatriz[0];
-  if(!ultima) return;
-  if(!confirm('¿Eliminar el último registro de esta matriz? No se puede deshacer.')) return;
-
-  await new Promise(res=>{
-    const r = txStore('pruebas','readwrite').delete(ultima.idPrueba);
-    r.onsuccess = ()=>res(true);
-  });
-  pruebas = pruebas.filter(p=>p.idPrueba !== ultima.idPrueba);
-
-  const m = matrices.find(x=>x.id===matrizId);
-  const quedan = pruebas.filter(p=>p.matrizId===matrizId);
-  m.hecha = quedan.some(p=>p.estadoGrabado);
-  await putOne('matrices', m);
-
-  renderMap(); renderList(); renderGallery(); renderCounters();
-  openSheet(matrizId);
-  toast('Último registro eliminado ↩️');
-}
-function openLightbox(src){
-  const bg = document.createElement('div');
-  bg.setAttribute('style','position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:80;display:flex;align-items:center;justify-content:center;');
-  bg.innerHTML = `<img src="${src}" style="max-width:92%;max-height:80%;border-radius:10px;">`;
-  bg.onclick = ()=> bg.remove();
-  document.body.appendChild(bg);
-}
-function closeSheetOnMapTap(){
-  if(leafletMap) leafletMap.on('click', ()=> document.getElementById('sheet').classList.remove('open'));
-}
-
-/* ---------- REGISTRAR EN ESTA MATRIZ (flujo único, foto primero) ---------- */
-let regFotoData = null;
-let regEstado = null;
-let regPrioridad = null;
-
-function openRegistro(matrizId){
-  regFotoData = null;
-  regEstado = null;
-  regPrioridad = null;
-  document.getElementById('modal').innerHTML = `
-    <h3>Registrar en esta matriz</h3>
+    <hr class="divider">
 
     <label>1. Foto (toca para abrir la cámara)</label>
     <input id="regFotoInput" type="file" accept="image/*" capture="environment" style="display:none">
@@ -469,8 +415,8 @@ function openRegistro(matrizId){
     <textarea id="regNotas" placeholder="Observaciones..."></textarea>
 
     <div class="btnrow" style="margin-top:16px">
-      <button class="big primary" onclick="submitRegistro('${matrizId}')">Guardar registro</button>
-      <button class="big secondary" onclick="closeModal()">Cancelar</button>
+      <button class="big primary" onclick="submitRegistro('${m.id}')">Guardar registro</button>
+      ${ultimaPrueba ? `<button class="big secondary" onclick="undoLast('${m.id}')">↩️ Deshacer último registro</button>` : ''}
     </div>
   `;
   document.getElementById('regFotoInput').addEventListener('change', async e=>{
@@ -480,8 +426,13 @@ function openRegistro(matrizId){
     const box = document.getElementById('photoBox');
     box.innerHTML = `<img src="${regFotoData}"><span class="retake">Toca para repetir</span>`;
   });
-  document.getElementById('modalBg').classList.add('open');
+  document.getElementById('sheet').classList.add('open');
+  document.getElementById('sheet').scrollTop = 0;
 }
+
+let regFotoData = null;
+let regEstado = null;
+let regPrioridad = null;
 
 function pickEstado(estado){
   regEstado = estado;
@@ -489,7 +440,6 @@ function pickEstado(estado){
     c.classList.remove('sel-listo','sel-revisar','sel-danada');
     if(c.dataset.estado===estado) c.classList.add('sel-'+estado);
   });
-  // Si quedó "Listo", la prioridad ya no aplica: la limpiamos visualmente.
   if(estado==='listo'){
     regPrioridad = null;
     document.querySelectorAll('.prioChip').forEach(c=>c.classList.remove('active'));
@@ -505,7 +455,6 @@ function pickPrioridad(p){
     c.style.borderColor = on ? PRIO_CHIP_COLOR[p] : '#ddd';
   });
 }
-function closeModal(){ document.getElementById('modalBg').classList.remove('open'); }
 
 async function submitRegistro(matrizId){
   if(!regEstado){ toast('Elige cómo quedó la matriz'); return; }
@@ -519,9 +468,40 @@ async function submitRegistro(matrizId){
     foto: regFotoData,
     marcaGrabado: regEstado==='listo'
   });
-  closeModal();
   if(navigator.vibrate) navigator.vibrate(80);
   toast('Registro guardado ✔');
+}
+
+async function undoLast(matrizId){
+  const pruebasMatriz = pruebas.filter(p=>p.matrizId===matrizId).sort((a,b)=>b.timestamp-a.timestamp);
+  const ultima = pruebasMatriz[0];
+  if(!ultima) return;
+  if(!confirm('¿Eliminar el último registro de esta matriz? No se puede deshacer.')) return;
+
+  await new Promise(res=>{
+    const r = txStore('pruebas','readwrite').delete(ultima.idPrueba);
+    r.onsuccess = ()=>res(true);
+  });
+  pruebas = pruebas.filter(p=>p.idPrueba !== ultima.idPrueba);
+
+  const m = matrices.find(x=>x.id===matrizId);
+  const quedan = pruebas.filter(p=>p.matrizId===matrizId);
+  m.hecha = quedan.some(p=>p.estadoGrabado);
+  await putOne('matrices', m);
+
+  renderMap(); renderList(); renderGallery(); renderCounters();
+  openSheet(matrizId);
+  toast('Último registro eliminado ↩️');
+}
+function openLightbox(src){
+  const bg = document.createElement('div');
+  bg.setAttribute('style','position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:80;display:flex;align-items:center;justify-content:center;');
+  bg.innerHTML = `<img src="${src}" style="max-width:92%;max-height:80%;border-radius:10px;">`;
+  bg.onclick = ()=> bg.remove();
+  document.body.appendChild(bg);
+}
+function closeSheetOnMapTap(){
+  if(leafletMap) leafletMap.on('click', ()=> document.getElementById('sheet').classList.remove('open'));
 }
 
 async function saveRegistro(matrizId, {condicion, prioridad, notas, foto, marcaGrabado}){
